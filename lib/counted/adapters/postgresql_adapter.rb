@@ -160,7 +160,11 @@ module Counted
       def reset!
         schemas = discover_schemas_with_metadata
         schemas.each do |schema|
-          @connection.execute("DELETE FROM #{metadata_table(schema)}")
+          begin
+            @connection.execute("DELETE FROM #{metadata_table(schema)}")
+          rescue => e
+            warn "[counted] Cannot delete from metadata table in #{schema}: #{e.message}"
+          end
         end
 
         triggers = @connection.select_values(<<~SQL)
@@ -170,15 +174,23 @@ module Counted
         SQL
 
         triggers.each do |fqtn|
-          @connection.execute("DROP TRIGGER IF EXISTS counted_row_trigger ON #{fqtn}")
-          @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
+          begin
+            @connection.execute("DROP TRIGGER IF EXISTS counted_row_trigger ON #{fqtn}")
+            @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
+          rescue => e
+            warn "[counted] Cannot drop triggers on #{fqtn}: #{e.message}"
+          end
         end
       end
 
       def full_reset!
         schemas = discover_schemas_with_metadata
         schemas.each do |schema|
-          @connection.execute("DROP TABLE IF EXISTS #{metadata_table(schema)} CASCADE")
+          begin
+            @connection.execute("DROP TABLE IF EXISTS #{metadata_table(schema)} CASCADE")
+          rescue => e
+            warn "[counted] Cannot drop metadata table in #{schema}: #{e.message}"
+          end
           self.class.ready.delete(ready_key(schema))
         end
 
@@ -189,8 +201,12 @@ module Counted
         SQL
 
         triggers.each do |fqtn|
-          @connection.execute("DROP TRIGGER IF EXISTS counted_row_trigger ON #{fqtn}")
-          @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
+          begin
+            @connection.execute("DROP TRIGGER IF EXISTS counted_row_trigger ON #{fqtn}")
+            @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
+          rescue => e
+            warn "[counted] Cannot drop triggers on #{fqtn}: #{e.message}"
+          end
         end
 
         function_rows = @connection.select_all(<<~SQL)
@@ -200,8 +216,12 @@ module Counted
         SQL
         function_rows.each do |row|
           schema = row["routine_schema"]
-          @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_trigger_fn() CASCADE")
-          @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_truncate_fn() CASCADE")
+          begin
+            @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_trigger_fn() CASCADE")
+            @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_truncate_fn() CASCADE")
+          rescue => e
+            warn "[counted] Cannot drop functions in #{schema}: #{e.message}"
+          end
           self.class.ready.delete("#{database_name}:#{schema}:functions")
         end
       end
@@ -314,8 +334,9 @@ module Counted
       end
 
       def create_metadata_table!(schema)
+        table = metadata_table(schema)
         @connection.execute(<<~SQL)
-          CREATE TABLE IF NOT EXISTS #{metadata_table(schema)} (
+          CREATE TABLE IF NOT EXISTS #{table} (
             id bigserial PRIMARY KEY,
             table_name text NOT NULL,
             row_count bigint NOT NULL DEFAULT 0,
@@ -324,6 +345,14 @@ module Counted
             UNIQUE (table_name)
           )
         SQL
+        begin
+          @connection.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE #{table} TO PUBLIC")
+          seq = "#{@connection.quote_table_name(schema)}.#{@connection.quote_table_name(Counted.configuration.metadata_table_name + '_id_seq')}"
+          @connection.execute("GRANT USAGE, SELECT ON SEQUENCE #{seq} TO PUBLIC")
+        rescue => e
+          # table may already exist with a different owner
+          warn "[counted] Could not grant privileges on #{table}: #{e.message}" if Counted.logger
+        end
       end
 
       def create_trigger_functions!(schema)
@@ -332,6 +361,7 @@ module Counted
           CREATE OR REPLACE FUNCTION #{quoted_schema}.counted_trigger_fn()
           RETURNS trigger
           LANGUAGE plpgsql
+          SECURITY DEFINER
           AS $$
           BEGIN
             IF TG_OP = 'INSERT' THEN
@@ -361,6 +391,7 @@ module Counted
           CREATE OR REPLACE FUNCTION #{quoted_schema}.counted_truncate_fn()
           RETURNS trigger
           LANGUAGE plpgsql
+          SECURITY DEFINER
           AS $$
           BEGIN
             EXECUTE format(
