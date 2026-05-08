@@ -26,7 +26,7 @@ module Counted
       end
 
       def setup_schema!(schema)
-        ensure_trigger_functions!
+        ensure_trigger_functions!(schema)
         ensure_metadata_table!(schema)
       end
 
@@ -58,14 +58,14 @@ module Counted
             DROP TRIGGER IF EXISTS counted_row_trigger ON #{quoted_fqtn};
             CREATE TRIGGER counted_row_trigger
               AFTER INSERT OR DELETE ON #{quoted_fqtn}
-              FOR EACH ROW EXECUTE FUNCTION public.counted_trigger_fn()
+              FOR EACH ROW EXECUTE FUNCTION #{conn.quote_table_name(schema)}.counted_trigger_fn()
           SQL
 
           conn.execute(<<~SQL)
             DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{quoted_fqtn};
             CREATE TRIGGER counted_truncate_trigger
               AFTER TRUNCATE ON #{quoted_fqtn}
-              FOR EACH STATEMENT EXECUTE FUNCTION public.counted_truncate_fn()
+              FOR EACH STATEMENT EXECUTE FUNCTION #{conn.quote_table_name(schema)}.counted_truncate_fn()
           SQL
         end
 
@@ -193,9 +193,17 @@ module Counted
           @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
         end
 
-        @connection.execute("DROP FUNCTION IF EXISTS public.counted_trigger_fn() CASCADE")
-        @connection.execute("DROP FUNCTION IF EXISTS public.counted_truncate_fn() CASCADE")
-        self.class.ready.delete("#{database_name}:__functions__")
+        function_rows = @connection.select_all(<<~SQL)
+          SELECT DISTINCT routine_schema
+          FROM information_schema.routines
+          WHERE routine_name IN ('counted_trigger_fn', 'counted_truncate_fn')
+        SQL
+        function_rows.each do |row|
+          schema = row["routine_schema"]
+          @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_trigger_fn() CASCADE")
+          @connection.execute("DROP FUNCTION IF EXISTS #{@connection.quote_table_name(schema)}.counted_truncate_fn() CASCADE")
+          self.class.ready.delete("#{database_name}:#{schema}:functions")
+        end
       end
 
       def discover_tables
@@ -274,11 +282,11 @@ module Counted
         "#{database_name}:#{schema}"
       end
 
-      def ensure_trigger_functions!
-        key = "#{database_name}:__functions__"
+      def ensure_trigger_functions!(schema)
+        key = "#{database_name}:#{schema}:functions"
         return if self.class.ready.include?(key)
 
-        create_trigger_functions!
+        create_trigger_functions!(schema)
         self.class.ready.add(key)
       end
 
@@ -318,9 +326,10 @@ module Counted
         SQL
       end
 
-      def create_trigger_functions!
+      def create_trigger_functions!(schema)
+        quoted_schema = @connection.quote_table_name(schema)
         @connection.execute(<<~SQL)
-          CREATE OR REPLACE FUNCTION public.counted_trigger_fn()
+          CREATE OR REPLACE FUNCTION #{quoted_schema}.counted_trigger_fn()
           RETURNS trigger
           LANGUAGE plpgsql
           AS $$
@@ -349,7 +358,7 @@ module Counted
         SQL
 
         @connection.execute(<<~SQL)
-          CREATE OR REPLACE FUNCTION public.counted_truncate_fn()
+          CREATE OR REPLACE FUNCTION #{quoted_schema}.counted_truncate_fn()
           RETURNS trigger
           LANGUAGE plpgsql
           AS $$

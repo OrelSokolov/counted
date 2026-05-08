@@ -67,9 +67,14 @@ module Counted
         tables.each do |table_name, schema|
           $stdout.print "[counted] #{db_name} #{schema}.#{table_name} ... "
           $stdout.flush
-          count = a.track!(table_name, schema: schema)
-          puts number_with_delimiter(count)
-          results << { database: db_name, schema: schema, table: table_name, count: count }
+          begin
+            count = a.track!(table_name, schema: schema)
+            puts number_with_delimiter(count)
+            results << { database: db_name, schema: schema, table: table_name, count: count }
+          rescue => e
+            puts "[counted] Skipping #{schema}.#{table_name}: #{e.class}: #{e.message}"
+            logger&.warn("[counted] Skipping #{db_name} #{schema}.#{table_name}: #{e.message}")
+          end
         end
       rescue => e
         warn "[counted] Skipping database #{db_name}: #{e.class}: #{e.message}"
@@ -151,11 +156,14 @@ module Counted
         configs = ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
         original_config = ActiveRecord::Base.connection.pool.db_config.configuration_hash
 
+        seen_databases = Set.new
         configs.each do |config|
+          db_name = config.respond_to?(:database) ? config.database : config.configuration_hash[:database]
+          next unless seen_databases.add?(db_name)
+
           begin
             ActiveRecord::Base.establish_connection(config.configuration_hash)
             conn = ActiveRecord::Base.connection
-            db_name = conn.pool.db_config.database
             yield conn, db_name
           rescue => e
             warn "[counted] Cannot connect to #{config.name}: #{e.message}"

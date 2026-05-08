@@ -17,8 +17,8 @@ class CountedTest < Minitest::Test
 
     connection.execute("DROP TABLE IF EXISTS test_items CASCADE")
     connection.execute("DROP TABLE IF EXISTS public.counted_metadata CASCADE")
-    connection.execute("DROP FUNCTION IF EXISTS counted_trigger_fn() CASCADE")
-    connection.execute("DROP FUNCTION IF EXISTS counted_truncate_fn() CASCADE")
+    connection.execute("DROP FUNCTION IF EXISTS public.counted_trigger_fn() CASCADE")
+    connection.execute("DROP FUNCTION IF EXISTS public.counted_truncate_fn() CASCADE")
 
     connection.execute(<<~SQL)
       CREATE TABLE test_items (
@@ -116,6 +116,34 @@ class CountedTest < Minitest::Test
 
     conn.execute("INSERT INTO test_schema.products (name) VALUES ('p')")
     assert_equal 4, Counted.fetch_count("products", schema: "test_schema")
+  ensure
+    ActiveRecord::Base.connection.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+  end
+
+  def test_trigger_functions_created_in_schema
+    conn = ActiveRecord::Base.connection
+    conn.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+    conn.execute("CREATE SCHEMA test_schema")
+    conn.execute(<<~SQL)
+      CREATE TABLE test_schema.products (
+        id bigserial PRIMARY KEY,
+        name text
+      )
+    SQL
+
+    Counted.track!("products", schema: "test_schema")
+
+    trigger_fn = conn.select_value(<<~SQL)
+      SELECT 1 FROM information_schema.routines
+      WHERE routine_schema = 'test_schema' AND routine_name = 'counted_trigger_fn'
+    SQL
+    assert trigger_fn, "Expected counted_trigger_fn to exist in test_schema"
+
+    truncate_fn = conn.select_value(<<~SQL)
+      SELECT 1 FROM information_schema.routines
+      WHERE routine_schema = 'test_schema' AND routine_name = 'counted_truncate_fn'
+    SQL
+    assert truncate_fn, "Expected counted_truncate_fn to exist in test_schema"
   ensure
     ActiveRecord::Base.connection.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
   end
