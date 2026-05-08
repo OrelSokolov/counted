@@ -175,6 +175,29 @@ module Counted
         end
       end
 
+      def full_reset!
+        schemas = discover_schemas_with_metadata
+        schemas.each do |schema|
+          @connection.execute("DROP TABLE IF EXISTS #{metadata_table(schema)} CASCADE")
+          self.class.ready.delete(ready_key(schema))
+        end
+
+        triggers = @connection.select_values(<<~SQL)
+          SELECT DISTINCT trigger_schema || '.' || event_object_table
+          FROM information_schema.triggers
+          WHERE trigger_name IN ('counted_row_trigger', 'counted_truncate_trigger')
+        SQL
+
+        triggers.each do |fqtn|
+          @connection.execute("DROP TRIGGER IF EXISTS counted_row_trigger ON #{fqtn}")
+          @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
+        end
+
+        @connection.execute("DROP FUNCTION IF EXISTS counted_trigger_fn() CASCADE")
+        @connection.execute("DROP FUNCTION IF EXISTS counted_truncate_fn() CASCADE")
+        self.class.ready.delete("#{database_name}:__functions__")
+      end
+
       def discover_tables
         conn = @connection
         meta_table = Counted.configuration.metadata_table_name

@@ -46,4 +46,17 @@ namespace :counted do
       warn "[counted] Skipping #{db_name}: #{e.message}"
     end
   end
+
+  desc "Remove all counted infrastructure (metadata tables, triggers, functions) across all databases"
+  task reset: :environment do
+    Counted.send(:each_database_connection) do |conn, db_name|
+      puts "[counted] Resetting #{db_name}..."
+      a = Counted::Adapters::PostgresqlAdapter.new(conn)
+      a.full_reset!
+      puts "[counted] #{db_name}: done"
+    rescue => e
+      warn "[counted] Skipping #{db_name}: #{e.message}"
+    end
+    puts "[counted] Reset complete."
+  end
 end
