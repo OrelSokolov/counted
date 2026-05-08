@@ -38,9 +38,7 @@ module Counted
     end
 
     def fetch_count(table_name, schema: "public", connection: nil)
-      a = adapter_for(connection)
-      a.ensure_infrastructure!
-      a.fetch_count(table_name, schema: schema)
+      adapter_for(connection).fetch_count(table_name, schema: schema)
     end
 
     def sync!(table_name, schema: "public", connection: nil)
@@ -64,7 +62,6 @@ module Counted
       each_database_connection do |conn, db_name|
         puts "[counted] Connecting to #{db_name}..."
         a = Adapters::PostgresqlAdapter.new(conn)
-        a.ensure_infrastructure!
         tables = a.discover_tables
         puts "[counted] #{db_name}: Found #{tables.size} table(s)"
         tables.each do |table_name, schema|
@@ -116,7 +113,8 @@ module Counted
     private
 
     def check_drift_for_adapter!(a, db_name)
-      unless a.infrastructure_exists?
+      schemas = a.discover_schemas_with_metadata
+      if schemas.empty?
         tables = a.discover_tables
         untracked = tables.map { |t, s| { table: t, schema: s } }
         if untracked.any?

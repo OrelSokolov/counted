@@ -16,7 +16,7 @@ class CountedTest < Minitest::Test
     connection = ActiveRecord::Base.connection
 
     connection.execute("DROP TABLE IF EXISTS test_items CASCADE")
-    connection.execute("DROP TABLE IF EXISTS counted_metadata CASCADE")
+    connection.execute("DROP TABLE IF EXISTS public.counted_metadata CASCADE")
     connection.execute("DROP FUNCTION IF EXISTS counted_trigger_fn() CASCADE")
     connection.execute("DROP FUNCTION IF EXISTS counted_truncate_fn() CASCADE")
 
@@ -30,7 +30,7 @@ class CountedTest < Minitest::Test
     Counted.instance_variable_set(:@adapters, nil)
     Counted.instance_variable_set(:@registered_tables, nil)
     Counted.instance_variable_set(:@configuration, nil)
-    Counted::Adapters::PostgresqlAdapter.ready_databases.clear
+    Counted::Adapters::PostgresqlAdapter.ready.clear
   end
 
   def test_track_creates_metadata_and_triggers

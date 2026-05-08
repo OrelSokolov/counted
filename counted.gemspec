@@ -12,8 +12,9 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0"
 
-  spec.metadata["homepage_uri"] = "https://github.com/user/counted"
-  spec.metadata["source_code_uri"] = "https://github.com/user/counted"
+  spec.homepage = "https://github.com/OrelSokolov/counted"
+  spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = spec.homepage
 
   spec.files = Dir.glob("lib/**/*.rb") + Dir.glob("lib/tasks/*.rake") + %w[README.md CHANGELOG.md]
   spec.require_paths = ["lib"]
