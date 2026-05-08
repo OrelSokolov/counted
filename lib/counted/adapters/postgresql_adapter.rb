@@ -58,14 +58,14 @@ module Counted
             DROP TRIGGER IF EXISTS counted_row_trigger ON #{quoted_fqtn};
             CREATE TRIGGER counted_row_trigger
               AFTER INSERT OR DELETE ON #{quoted_fqtn}
-              FOR EACH ROW EXECUTE FUNCTION counted_trigger_fn()
+              FOR EACH ROW EXECUTE FUNCTION public.counted_trigger_fn()
           SQL
 
           conn.execute(<<~SQL)
             DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{quoted_fqtn};
             CREATE TRIGGER counted_truncate_trigger
               AFTER TRUNCATE ON #{quoted_fqtn}
-              FOR EACH STATEMENT EXECUTE FUNCTION counted_truncate_fn()
+              FOR EACH STATEMENT EXECUTE FUNCTION public.counted_truncate_fn()
           SQL
         end
 
@@ -193,8 +193,8 @@ module Counted
           @connection.execute("DROP TRIGGER IF EXISTS counted_truncate_trigger ON #{fqtn}")
         end
 
-        @connection.execute("DROP FUNCTION IF EXISTS counted_trigger_fn() CASCADE")
-        @connection.execute("DROP FUNCTION IF EXISTS counted_truncate_fn() CASCADE")
+        @connection.execute("DROP FUNCTION IF EXISTS public.counted_trigger_fn() CASCADE")
+        @connection.execute("DROP FUNCTION IF EXISTS public.counted_truncate_fn() CASCADE")
         self.class.ready.delete("#{database_name}:__functions__")
       end
 
@@ -320,7 +320,7 @@ module Counted
 
       def create_trigger_functions!
         @connection.execute(<<~SQL)
-          CREATE OR REPLACE FUNCTION counted_trigger_fn()
+          CREATE OR REPLACE FUNCTION public.counted_trigger_fn()
           RETURNS trigger
           LANGUAGE plpgsql
           AS $$
@@ -349,7 +349,7 @@ module Counted
         SQL
 
         @connection.execute(<<~SQL)
-          CREATE OR REPLACE FUNCTION counted_truncate_fn()
+          CREATE OR REPLACE FUNCTION public.counted_truncate_fn()
           RETURNS trigger
           LANGUAGE plpgsql
           AS $$
