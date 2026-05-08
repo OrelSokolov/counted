@@ -156,10 +156,12 @@ module Counted
         configs = ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
         original_config = ActiveRecord::Base.connection.pool.db_config.configuration_hash
 
-        seen_databases = Set.new
+        seen = Set.new
         configs.each do |config|
-          db_name = config.respond_to?(:database) ? config.database : config.configuration_hash[:database]
-          next unless seen_databases.add?(db_name)
+          hash = config.configuration_hash
+          db_name = config.respond_to?(:database) ? config.database : hash[:database]
+          key = [db_name, hash[:username], hash[:schema_search_path]]
+          next unless seen.add?(key)
 
           begin
             ActiveRecord::Base.establish_connection(config.configuration_hash)
